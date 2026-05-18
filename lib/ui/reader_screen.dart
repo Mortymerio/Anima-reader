@@ -34,6 +34,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   String _extractedText = "Cargando contenido...";
   PdfDocument? _pdfDocument;
   epub.EpubBook? _epubBook;
+  List<epub.EpubChapter> _flatChapters = [];
   Timer? _debounceTimer;
   bool _isSaving = false;
   double _fontSize = 18.0;
@@ -112,6 +113,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return bytes;
   }
 
+  List<epub.EpubChapter> _flattenChapters(List<epub.EpubChapter> chapters) {
+    final list = <epub.EpubChapter>[];
+    for (final chapter in chapters) {
+      list.add(chapter);
+      if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
+        list.addAll(_flattenChapters(chapter.SubChapters!));
+      }
+    }
+    return list;
+  }
+
   void _loadProgress() async {
     try {
       // 1. Cargar progreso
@@ -133,6 +145,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       } else if (fileName.endsWith(".epub")) {
         final sanitizedBytes = _sanitizeEpubBytes(bytes);
         _epubBook = await epub.EpubReader.readBook(sanitizedBytes);
+        _flatChapters = _flattenChapters(_epubBook!.Chapters ?? []);
         _extractEpubText();
       } else if (fileName.endsWith(".mobi")) {
         _extractedText = "El formato MOBI es antiguo. Por favor, convierte este archivo a EPUB o PDF para usar Reflow en Anima.";
@@ -165,13 +178,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _extractEpubText() {
-    if (_epubBook == null) return;
+    if (_epubBook == null || _flatChapters.isEmpty) return;
     try {
       // Usamos la página como índice de capítulo
-      int chapterIndex = (_currentPage - 1).clamp(0, _epubBook!.Chapters!.length - 1);
-      final chapter = _epubBook!.Chapters![chapterIndex];
+      int chapterIndex = (_currentPage - 1).clamp(0, _flatChapters.length - 1);
+      final chapter = _flatChapters[chapterIndex];
       // Limpiamos tags HTML básicos
-      _extractedText = chapter.HtmlContent!
+      _extractedText = (chapter.HtmlContent ?? '')
           .replaceAll(RegExp(r'<[^>]*>'), '')
           .replaceAll('&nbsp;', ' ')
           .trim();
@@ -238,7 +251,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     setState(() {
       int maxPages = 9999;
       if (_pdfDocument != null) maxPages = _pdfDocument!.pages.count;
-      if (_epubBook != null) maxPages = _epubBook!.Chapters!.length;
+      if (_epubBook != null) maxPages = _flatChapters.length;
 
       _currentPage = (_currentPage + delta).clamp(1, maxPages);
       _pageChangesSinceRefresh++;
