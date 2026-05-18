@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:epubx/epubx.dart' as epub;
+import 'package:archive/archive.dart';
 import '../services/github_service.dart';
 import 'widgets/eink_flash.dart';
 
@@ -56,6 +58,60 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await prefs.setDouble('font_size', _fontSize);
   }
 
+  List<int> _sanitizeEpubBytes(List<int> bytes) {
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final newArchive = Archive();
+      bool modified = false;
+
+      for (final file in archive) {
+        if (file.isFile && (file.name.endsWith('.opf') || file.name.endsWith('.ncx'))) {
+          final contentBytes = file.content as List<int>;
+          final contentString = utf8.decode(contentBytes);
+
+          final decodedContent = contentString.replaceAllMapped(
+            RegExp(r'(href|src)="([^"]+)"'),
+            (match) {
+              final attr = match.group(1);
+              final val = match.group(2)!;
+              try {
+                final decodedVal = Uri.decodeFull(val);
+                return '$attr="$decodedVal"';
+              } catch (_) {
+                return match.group(0)!;
+              }
+            },
+          );
+
+          if (decodedContent != contentString) {
+            final newContentBytes = utf8.encode(decodedContent);
+            final newFile = ArchiveFile(
+              file.name,
+              newContentBytes.length,
+              newContentBytes,
+            );
+            newArchive.addFile(newFile);
+            modified = true;
+          } else {
+            newArchive.addFile(file);
+          }
+        } else {
+          newArchive.addFile(file);
+        }
+      }
+
+      if (modified) {
+        final encodedBytes = ZipEncoder().encode(newArchive);
+        if (encodedBytes != null) {
+          return encodedBytes;
+        }
+      }
+    } catch (e) {
+      debugPrint("Error sanitizing EPUB bytes: $e");
+    }
+    return bytes;
+  }
+
   void _loadProgress() async {
     try {
       // 1. Cargar progreso
@@ -75,7 +131,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _pdfDocument = PdfDocument(inputBytes: bytes);
         _extractPageText();
       } else if (fileName.endsWith(".epub")) {
-        _epubBook = await epub.EpubReader.readBook(bytes);
+        final sanitizedBytes = _sanitizeEpubBytes(bytes);
+        _epubBook = await epub.EpubReader.readBook(sanitizedBytes);
         _extractEpubText();
       } else if (fileName.endsWith(".mobi")) {
         _extractedText = "El formato MOBI es antiguo. Por favor, convierte este archivo a EPUB o PDF para usar Reflow en Anima.";

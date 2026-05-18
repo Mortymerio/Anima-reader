@@ -18,6 +18,7 @@ class _HomeScreenState extends State<HomeScreen> {
   GitHubService? _githubService;
   List<Map<String, dynamic>> _books = [];
   bool _isLoading = false;
+  bool _showHelp = false;
 
   @override
   void initState() {
@@ -73,19 +74,137 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSetup() {
-    return Padding(
+    return SingleChildScrollView(
+      physics: const ClampingScrollPhysics(),
       padding: const EdgeInsets.all(20.0),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(controller: _patController, decoration: const InputDecoration(labelText: "GitHub PAT")),
-          TextField(controller: _ownerController, decoration: const InputDecoration(labelText: "Owner")),
-          TextField(controller: _repoController, decoration: const InputDecoration(labelText: "Repo Name")),
+          const Text(
+            "Configura tu Biblioteca de Tinta",
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'Serif'),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Conecta tu cuenta de GitHub para sincronizar tus libros y progreso de lectura.",
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 25),
+          TextField(
+            controller: _patController,
+            decoration: const InputDecoration(
+              labelText: "GitHub PAT (Token de Acceso)",
+              border: OutlineInputBorder(),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2)),
+              labelStyle: TextStyle(color: Colors.black),
+            ),
+          ),
+          const SizedBox(height: 15),
+          TextField(
+            controller: _ownerController,
+            decoration: const InputDecoration(
+              labelText: "Usuario de GitHub (Owner)",
+              border: OutlineInputBorder(),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2)),
+              labelStyle: TextStyle(color: Colors.black),
+            ),
+          ),
+          const SizedBox(height: 15),
+          TextField(
+            controller: _repoController,
+            decoration: const InputDecoration(
+              labelText: "Nombre del Repositorio",
+              border: OutlineInputBorder(),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.black, width: 2)),
+              labelStyle: TextStyle(color: Colors.black),
+            ),
+          ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _fetchBooks,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
-            child: const Text("Connect"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+              side: const BorderSide(color: Colors.black, width: 2),
+            ),
+            child: const Text("CONECTAR BIBLIOTECA", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           ),
+          const SizedBox(height: 25),
+          OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _showHelp = !_showHelp;
+              });
+            },
+            icon: Icon(_showHelp ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.black),
+            label: Text(
+              _showHelp ? "OCULTAR GUÍA DE AYUDA" : "¿CÓMO CONFIGURAR MI BIBLIOTECA?",
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.black, width: 1.5),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+            ),
+          ),
+          if (_showHelp) ...[
+            const SizedBox(height: 15),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.black, width: 2),
+                color: Colors.white,
+              ),
+              padding: const EdgeInsets.all(16),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "PASO 1: Crear Repositorio",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Serif'),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Crea un repositorio en GitHub (ej: 'mis-libros'). Márcalo como PRIVADO e inicialízalo con un archivo README (casilla obligatoria).",
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    "PASO 2: Generar tu Token (PAT)",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Serif'),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Ve a Settings -> Developer Settings -> Personal Access Tokens -> Tokens (classic).\nGenera un token nuevo con permisos de 'repo' y cópialo.",
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    "PASO 3: Subir tus Libros",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Serif'),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Sube tus archivos .epub o .pdf directamente en la raíz (root) del repositorio. No los guardes dentro de carpetas.",
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  SizedBox(height: 12),
+                  Text(
+                    "PASO 4: Conectar",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Serif'),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "Ingresa los datos arriba y presiona Conectar. El archivo 'sync.json' se creará de forma automática al empezar a leer.",
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
