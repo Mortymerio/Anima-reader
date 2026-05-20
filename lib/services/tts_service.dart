@@ -219,7 +219,12 @@ class TtsService {
     if (_state != TtsState.playing) return;
     _currentSentenceIndex++;
     if (_currentSentenceIndex < _sentences.length) {
-      _speakCurrent();
+      // Small delay so the SAPI engine on Windows fully releases its state
+      // before we call speak() again — otherwise it briefly reports "still speaking"
+      // and ignores the next sentence, silently stopping playback.
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_state == TtsState.playing) _speakCurrent();
+      });
     } else {
       stop();
       onCompletion?.call();
