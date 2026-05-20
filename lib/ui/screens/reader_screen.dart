@@ -48,7 +48,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   double _margin = 8.0;
 
   // ─── TTS state ───
-  final TtsService _ttsService = TtsService();
+  late final TtsService _ttsService;
   bool _isTtsActive = false;
   bool _isTtsPlaying = false;
   double _ttsSpeed = 1.0;
@@ -70,6 +70,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     super.initState();
     _parser = BookParser();
     _syncService = SyncService(github: widget.githubService);
+    _ttsService = TtsService(); // Init after super.initState() so platform channels are ready
     _loadPreferences();
     _setupTtsListeners();
     _loadBook();
