@@ -66,10 +66,53 @@ class TtsService {
     onStateChanged?.call(_state);
   }
 
-  /// Sets the TTS language (e.g. 'es-ES', 'en-US').
+  /// Sets the TTS language (e.g. 'es-ES', 'en-US') and attempts to select a matching voice.
   Future<void> setLanguage(String locale) async {
     _currentLanguage = locale;
     await _flutterTts.setLanguage(locale);
+
+    try {
+      final voices = await _flutterTts.getVoices;
+      if (voices != null) {
+        debugPrint("Available TTS voices on this device:");
+        for (var voice in voices) {
+          if (voice is Map) {
+            debugPrint(" - Name: ${voice['name']}, Locale: ${voice['locale']}");
+          }
+        }
+
+        final languageCode = locale.split('-')[0].toLowerCase(); // e.g. 'es'
+        Map<String, String>? matchingVoice;
+
+        for (var voice in voices) {
+          if (voice is Map) {
+            final voiceLocale = (voice['locale'] ?? '').toString().toLowerCase();
+            final voiceName = (voice['name'] ?? '').toString().toLowerCase();
+
+            // Match if locale contains language code (e.g., 'es-ES', 'es-MX', 'es') or name contains 'spanish'/'español'
+            if (voiceLocale.startsWith(languageCode) ||
+                voiceLocale.contains(languageCode) ||
+                (languageCode == 'es' && (voiceLocale.contains('spa') || voiceName.contains('spanish') || voiceName.contains('español'))) ||
+                (languageCode == 'en' && (voiceLocale.contains('eng') || voiceName.contains('english')))) {
+              matchingVoice = {
+                'name': voice['name']?.toString() ?? '',
+                'locale': voice['locale']?.toString() ?? '',
+              };
+              break;
+            }
+          }
+        }
+
+        if (matchingVoice != null) {
+          await _flutterTts.setVoice(matchingVoice);
+          debugPrint("Selected TTS voice: ${matchingVoice['name']} for language $locale");
+        } else {
+          debugPrint("No matching native voice found for $locale. The OS default voice will be used.");
+        }
+      }
+    } catch (e) {
+      debugPrint("Error setting voice for locale $locale: $e");
+    }
   }
 
   /// Sets the speech rate (speed). Windows and Android handle this scale slightly differently.
