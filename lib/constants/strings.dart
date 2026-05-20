@@ -76,6 +76,14 @@ class S {
   static const settingsMarginMedium = 'Medium (16px)';
   static const settingsMarginLarge = 'Large (24px)';
 
+  // ─── TTS ───
+  static const ttsTooltip = 'Text-to-Speech Controls';
+  static const ttsPlay = 'Play';
+  static const ttsPause = 'Pause';
+  static const ttsStop = 'Stop';
+  static const ttsLanguage = 'Language';
+  static const ttsSpeed = 'Speed';
+
   // ─── Errors ───
   static const errorNoConnection =
       'No internet connection. Please check your network.';

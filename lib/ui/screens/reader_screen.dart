@@ -8,6 +8,7 @@ import '../../services/github_service.dart';
 import '../../services/book_parser.dart';
 import '../../services/book_cache_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/tts_service.dart';
 import '../widgets/eink_flash.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/reading_progress_bar.dart';
@@ -46,6 +47,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
   int _refreshInterval = 10;
   double _margin = 8.0;
 
+  // ─── TTS state ───
+  final TtsService _ttsService = TtsService();
+  bool _isTtsActive = false;
+  bool _isTtsPlaying = false;
+  double _ttsSpeed = 1.0;
+  String _ttsLanguage = 'es-ES';
+  int _currentTtsSentenceIndex = -1;
+
   // ─── UI state ───
   bool _showControls = true; // Immersive mode toggle
   List<Widget> _pageContent = [];
@@ -62,6 +71,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _parser = BookParser();
     _syncService = SyncService(github: widget.githubService);
     _loadPreferences();
+    _setupTtsListeners();
     _loadBook();
   }
 
@@ -71,6 +81,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _syncService.dispose();
     _parser.dispose(); // Properly closes both PDF document handles (fixes A4)
     _scrollController.dispose();
+    _ttsService.stop();
+    _ttsService.dispose();
     super.dispose();
   }
 
@@ -83,6 +95,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _fontSize = prefs.getDouble('font_size') ?? 18.0;
       _refreshInterval = prefs.getInt('eink_refresh_interval') ?? 10;
       _margin = prefs.getDouble('reader_margin') ?? 8.0;
+      _ttsSpeed = prefs.getDouble('tts_speed') ?? 1.0;
+      _ttsLanguage = prefs.getString('tts_language') ?? 'es-ES';
     });
   }
 
@@ -271,6 +285,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     // Update sync progress
     _syncService.updateProgress(widget.book.name, _currentPage);
+
+    if (_isTtsActive && _isTtsPlaying) {
+      _startTtsOnCurrentPage();
+    }
   }
 
   void _triggerFlash() async {
@@ -318,6 +336,105 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_margin == 8.0) return 'Small';
     if (_margin == 16.0) return 'Medium';
     return 'Large';
+  }
+
+  void _setupTtsListeners() {
+    _ttsService.onStateChanged = (state) {
+      if (!mounted) return;
+      setState(() {
+        _isTtsPlaying = state == TtsState.playing;
+      });
+    };
+
+    _ttsService.onSentenceChanged = (index, sentence) {
+      if (!mounted) return;
+      setState(() {
+        _currentTtsSentenceIndex = index;
+      });
+    };
+
+    _ttsService.onCompletion = () {
+      if (!mounted) return;
+      if (_currentPage < _parser.totalPages) {
+        _handlePageChange(1);
+        _startTtsOnCurrentPage();
+      } else {
+        setState(() {
+          _isTtsPlaying = false;
+          _currentTtsSentenceIndex = -1;
+        });
+      }
+    };
+  }
+
+  void _toggleTtsPlayback() async {
+    if (_ttsService.isPlaying) {
+      await _ttsService.pause();
+    } else if (_ttsService.isPaused) {
+      await _ttsService.resume();
+    } else {
+      _startTtsOnCurrentPage();
+    }
+  }
+
+  void _startTtsOnCurrentPage() async {
+    String? text;
+    if (_parser.isPdfLoaded) {
+      text = _parser.extractPdfText(_currentPage);
+    } else if (_parser.isEpubLoaded) {
+      text = _parser.extractEpubText(_currentPage);
+    }
+
+    if (text == null || text.trim().isEmpty) {
+      return;
+    }
+
+    await _ttsService.setLanguage(_ttsLanguage);
+    await _ttsService.setSpeed(_ttsSpeed);
+    await _ttsService.start(text);
+  }
+
+  void _stopTts() async {
+    await _ttsService.stop();
+    setState(() {
+      _isTtsActive = false;
+      _currentTtsSentenceIndex = -1;
+    });
+  }
+
+  void _cycleTtsSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_ttsSpeed == 1.0) {
+        _ttsSpeed = 1.25;
+      } else if (_ttsSpeed == 1.25) {
+        _ttsSpeed = 1.5;
+      } else if (_ttsSpeed == 1.5) {
+        _ttsSpeed = 1.75;
+      } else if (_ttsSpeed == 1.75) {
+        _ttsSpeed = 2.0;
+      } else {
+        _ttsSpeed = 1.0;
+      }
+    });
+    await _ttsService.setSpeed(_ttsSpeed);
+    await prefs.setDouble('tts_speed', _ttsSpeed);
+  }
+
+  void _toggleTtsLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_ttsLanguage == 'es-ES') {
+        _ttsLanguage = 'en-US';
+      } else {
+        _ttsLanguage = 'es-ES';
+      }
+    });
+    await _ttsService.setLanguage(_ttsLanguage);
+    await prefs.setString('tts_language', _ttsLanguage);
+    if (_ttsService.isPlaying || _ttsService.isPaused) {
+      _startTtsOnCurrentPage();
+    }
   }
 
   // ─── Build ───
@@ -399,6 +516,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
           icon: const Icon(Icons.density_medium, size: 20),
           onPressed: _cycleMargin,
           tooltip: 'Margin: ${_getMarginLabel()}',
+        ),
+
+        // TTS toggle button
+        IconButton(
+          icon: Icon(
+            _isTtsActive ? Icons.volume_up : Icons.volume_mute,
+            size: 20,
+            color: _isTtsActive ? theme.colorScheme.primary : null,
+          ),
+          onPressed: () {
+            setState(() {
+              _isTtsActive = !_isTtsActive;
+            });
+            if (_isTtsActive) {
+              _startTtsOnCurrentPage();
+            } else {
+              _stopTts();
+            }
+          },
+          tooltip: S.ttsTooltip,
         ),
 
         // Page indicator
@@ -510,6 +647,57 @@ class _ReaderScreenState extends State<ReaderScreen> {
           currentPage: _currentPage,
           totalPages: _parser.totalPages,
         ),
+
+        // TTS Control Panel
+        if (_isTtsActive)
+          Container(
+            height: 56,
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              border: Border(
+                top: BorderSide(color: theme.colorScheme.onSurface.withValues(alpha: 0.15)),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Stop/Close button
+                IconButton(
+                  icon: const Icon(Icons.stop, size: 20),
+                  onPressed: _stopTts,
+                  tooltip: S.ttsStop,
+                ),
+                // Play/Pause button
+                IconButton(
+                  icon: Icon(_isTtsPlaying ? Icons.pause : Icons.play_arrow, size: 24),
+                  onPressed: _toggleTtsPlayback,
+                  tooltip: _isTtsPlaying ? S.ttsPause : S.ttsPlay,
+                ),
+                // Language toggle: ES/EN
+                TextButton(
+                  onPressed: _toggleTtsLanguage,
+                  child: Text(
+                    _ttsLanguage == 'es-ES' ? 'ES' : 'EN',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                // Speed selection: 1.0x, 1.25x, etc.
+                TextButton(
+                  onPressed: _cycleTtsSpeed,
+                  child: Text(
+                    '${_ttsSpeed}x',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // Bottom navigation bar
         if (_showControls)

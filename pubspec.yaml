@@ -16,6 +16,7 @@ dependencies:
   pdfx: ^2.9.2
   archive: ^3.6.1
   image: ^3.3.0
+  flutter_tts: ^4.0.2
 
 dev_dependencies:
   flutter_test:

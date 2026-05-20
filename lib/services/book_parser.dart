@@ -145,6 +145,15 @@ class BookParser {
 
   // ─── EPUB Extraction ───
 
+  /// Extract plain text from an EPUB chapter.
+  String? extractEpubText(int pageNumber) {
+    if (_epubBook == null || _flatChapters.isEmpty) return null;
+    final chapterIndex = (pageNumber - 1).clamp(0, _flatChapters.length - 1);
+    final chapter = _flatChapters[chapterIndex];
+    final html = chapter.HtmlContent ?? '';
+    return _stripHtml(html);
+  }
+
   /// Extract content widgets from an EPUB chapter.
   /// [pageNumber] is 1-indexed and maps to a chapter index.
   List<Widget> extractEpubContent(int pageNumber, double fontSize) {
