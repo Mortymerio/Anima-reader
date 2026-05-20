@@ -8,8 +8,8 @@ enum TtsState { playing, paused, stopped }
 /// Service to handle Text-to-Speech playback with sentence-by-sentence tracking.
 /// Uses a simulated mock playback on Windows to bypass the flutter_tts native threading bug.
 class TtsService {
-  final FlutterTts? _flutterTts = (!kIsWeb && Platform.isWindows) ? null : FlutterTts();
-  final bool _useMock = !kIsWeb && Platform.isWindows;
+  final FlutterTts? _flutterTts = FlutterTts();
+  final bool _useMock = false;
 
   // Mock state
   Timer? _mockTimer;
