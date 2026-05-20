@@ -239,7 +239,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // ─── Navigation ───
 
-  void _handlePageChange(int delta) {
+  void _handlePageChange(int delta, {bool autoStartTts = false}) {
     if (delta > 0) {
       // Try scrolling down first
       if (_scrollController.hasClients &&
@@ -286,7 +286,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // Update sync progress
     _syncService.updateProgress(widget.book.name, _currentPage);
 
-    if (_isTtsActive && _isTtsPlaying) {
+    if (autoStartTts || (_isTtsActive && _isTtsPlaying)) {
       _startTtsOnCurrentPage();
     }
   }
@@ -356,7 +356,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _ttsService.onCompletion = () {
       if (!mounted) return;
       if (_currentPage < _parser.totalPages) {
-        _handlePageChange(1);
+        _handlePageChange(1, autoStartTts: true);
       } else {
         setState(() {
           _isTtsPlaying = false;
