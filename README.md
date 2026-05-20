@@ -1,84 +1,128 @@
 # 🌑 Anima Reader
-> Lector minimalista de alto contraste optimizado para dispositivos E-ink.
 
-![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
-![GitHub API](https://img.shields.io/badge/GitHub_API-181717?style=for-the-badge&logo=github&logoColor=white)
+> **The ultra-minimalist, distraction-free book reader designed for E-ink screens and ultimate reading comfort.**
 
-Anima es un lector de libros electrónicos diseñado específicamente para pantallas de tinta electrónica (E-ink). Utiliza la infraestructura de **GitHub** como nube personal para gestionar tu biblioteca y sincronizar tu progreso de lectura entre dispositivos.
+Anima is a lightweight electronic book reader built for people who value pure reading utility. It treats your own **GitHub Private Repository** as a free, secure, and self-hosted cloud to store your library and synchronize your reading progress across all your devices—completely offline-first, private, and telemetry-free.
 
-## ✨ Características Principales
+---
 
-- **Optimización E-ink**: Interfaz en blanco y negro puro (#000000 y #FFFFFF).
-- **Refresco Anti-Ghosting**: Flash de limpieza de pantalla automático cada 10 cambios de página.
-- **Sin Animaciones**: Transiciones instantáneas para evitar el parpadeo grisáceo.
-- **Sincronización en la Nube**: Progreso guardado automáticamente en un archivo `sync.json` en tu propio repositorio de GitHub.
-- **Multi-formato con Reflow**: 
-  - **PDF**: Extracción de texto y ajuste dinámico al ancho de pantalla.
-  - **EPUB**: Soporte nativo para lectura fluida.
-- **Personalización**: Selector de tamaño de fuente en tiempo real con memoria persistente.
+## 📸 App Preview
 
-## 🚀 Configuración de tu Biblioteca (Paso a Paso)
+![Anima Reader interface](assets/screenshots/app_preview.png)
+*(Minimalist library setup, books list, and fluid reading experience)*
 
-Para utilizar Anima y sincronizar tu progreso, necesitas configurar un repositorio de GitHub que servirá como tu biblioteca personal en la nube. Sigue estos sencillos pasos:
+---
 
-### Paso 1: Crear el Repositorio de Libros
-1. Inicia sesión en [GitHub](https://github.com). Si no tienes una cuenta, regístrate (es 100% gratis).
-2. En la esquina superior derecha, haz clic en el botón **`+`** y selecciona **New repository** (Nuevo repositorio).
-3. Configura los siguientes campos:
-   - **Repository name**: Dale un nombre a tu biblioteca (ej: `mis-libros` o `Anima-library`).
-   - **Public/Private**: Marca el repositorio como **Private** (Privado) para proteger los derechos de autor de tus libros personales.
-   - **Initialize this repository with**: Marca la casilla **Add a README file**. Esto es obligatorio para que el repositorio se inicialice correctamente y la app pueda comunicarse con él.
-4. Haz clic en **Create repository**.
+## ⚡ Core Philosophy: Pure Focus & Comfort
 
-### Paso 2: Generar tu Personal Access Token (PAT)
-El PAT es una "contraseña especial" que permite a Anima acceder a tus libros y guardar tu progreso de forma segura.
-1. Haz clic en tu foto de perfil en la esquina superior derecha de GitHub y ve a **Settings** (Configuración).
-2. En la barra lateral izquierda, baja hasta el final y haz clic en **<> Developer settings** (Configuración de desarrollador).
-3. Selecciona **Personal access tokens** -> **Tokens (classic)**.
-4. Haz clic en **Generate new token** -> **Generate new token (classic)**.
-5. Configura el token:
-   - **Note**: Escribe un nombre descriptivo, por ejemplo: `Anima Reader E-ink`.
-   - **Expiration**: Selecciona la duración que prefieras (te sugerimos *No expiration* para que no expire nunca).
-   - **Scopes (Permisos)**: Marca únicamente la casilla **`repo`** (esto otorgará permisos de lectura/escritura para gestionar tus libros y progreso en repositorios privados).
-6. Ve al final de la página y haz clic en **Generate token**.
-7. ⚠️ **IMPORTANTE**: Copia el token que aparece en pantalla inmediatamente. **No podrás volver a verlo**. Guárdalo en un lugar seguro (por ejemplo, en tus notas o gestor de contraseñas) para ingresarlo en Anima.
+Anima strips away the bloat of modern reading applications. No recommendations, no social feeds, no tracking, and no flashing UI animations. Just your books, rendered with maximum contrast, optimized for paper-like screens.
 
-### Paso 3: Subir tus Libros (Rutas y Paths)
-Para que Anima reconozca tus libros, debes subirlos en la ubicación adecuada:
-1. Entra a tu repositorio recién creado en GitHub.
-2. Haz clic en el botón **Add file** -> **Upload files** (Subir archivos).
-3. Arrastra tus libros en formato **`.epub`** o **`.pdf`** y suéltalos en la ventana.
-4. ⚠️ **Ruta Correcta (Path)**: Asegúrate de subirlos **directamente en la raíz (root)** del repositorio (no dentro de subcarpetas como `libros/` o `documentos/`). La app busca tus títulos únicamente en la raíz del repositorio.
-5. Haz clic en **Commit changes** (Confirmar cambios) al final para guardar los libros.
+*   **Absolute Minimalism**: A pristine, layout-first interface that gets out of your way the moment you open a book.
+*   **Maximum Screen Utility**: Adjust or completely remove margins to occupy 100% of the screen.
+*   **E-ink Native**: Zero transition animations, no slide scrolling, and a built-in anti-ghosting double-flash refresh.
+*   **Private Cloud Sync**: All your progress is stored in a simple `sync.json` file in your repository. You own your data.
 
-### Paso 4: Sincronización del Progreso (`sync.json`)
-¡No necesitas crear este archivo manualmente! 
-- Anima se encargará de crear y actualizar un archivo llamado **`sync.json`** en la raíz de tu repositorio de forma automática cada vez que dejes de leer por unos segundos (de forma asíncrona) o cambies de capítulo.
-- Este archivo registra de manera compacta tu página y progreso exacto, permitiéndote reanudar tus lecturas en cualquier momento y dispositivo sincronizado.
+---
 
-### Paso 5: Configurar la App
-Al iniciar Anima por primera vez en tu dispositivo, ingresa los siguientes datos:
-- **GitHub PAT**: El token personal (PAT) que copiaste en el *Paso 2*.
-- **Owner**: Tu nombre de usuario de GitHub.
-- **Repo Name**: El nombre exacto de tu repositorio de libros (creado en el *Paso 1*).
+## ✨ Features
 
-## 🛠️ Desarrollo Local
+*   📖 **Smart Reflow & Multi-format**:
+    *   **EPUB**: Fluid typography, native chapter-by-chapter rendering, and inline images.
+    *   **PDF (Reflow Mode)**: Instant text extraction with dynamic word wrapping and font scaling.
+    *   **PDF (Page-Image Mode)**: Fallback image renderer with **intelligent automatic margin-cropping** that crops document borders to maximize readability.
+*   📐 **Real-time Margin Controls**: Change the layout density on the fly. Choose between **None (0px)**, **Small (8px)**, **Medium (16px)**, or **Large (24px)** horizontal padding.
+*   ☀️ **Eye-Care Themes**:
+    *   `Normal`: High-contrast black and white for E-ink screens.
+    *   `Dark`: Soft dark mode to prevent night-reading eye strain.
+    *   `Warm`: Solarized sepia tones mimicking book paper, perfect for LCD/desktop reading.
+*   🔄 **Anti-Ghosting Refresh**: Automatically flashes the screen every N page turns (configurable) to clear E-ink residue.
+*   🌐 **Offline-First Cache**: Downloads your books once from your GitHub repository and caches them locally for uninterrupted offline reading.
+*   🔍 **Discrete Font Controls**: Real-time font size adjustments using discrete click targets instead of slide bars.
 
-Si deseas compilar el proyecto tú mismo:
+---
+
+## 🚀 Setting Up Your Private Library (Step by Step)
+
+To use Anima, you just need a free GitHub account to act as your cloud server.
+
+### Step 1: Create Your Private Book Repository
+1. Log in to [GitHub](https://github.com).
+2. Create a new repository (e.g., `my-books`).
+3. Set the visibility to **Private** to comply with book copyright.
+4. **Important**: Check **Add a README file** (this initializes the repository structure so the app can read it).
+
+### Step 2: Generate a Personal Access Token (PAT)
+1. Go to your GitHub **Settings** → **Developer Settings** → **Personal Access Tokens** → **Tokens (classic)**.
+2. Click **Generate new token (classic)**.
+3. Check only the **`repo`** scope.
+4. Click generate, and **copy the token** immediately (GitHub will only show it once).
+
+### Step 3: Upload Your Files
+1. Go to your book repository on GitHub.
+2. Click **Add file** → **Upload files**.
+3. Drag and drop your `.epub` and `.pdf` files directly into the **root** of the repository (do not place them inside folders).
+4. Click **Commit changes**.
+
+### Step 4: Connect Anima
+Launch Anima and input:
+- **GitHub PAT**: The token from Step 2.
+- **Username**: Your GitHub username.
+- **Repository Name**: The exact name of your book repository.
+
+Press **Connect Library** and you're ready to read!
+
+---
+
+## 🛠️ Local Development
+
+Ensure you have the Flutter SDK installed.
 
 ```powershell
-# Instalar dependencias
+# Clone the repository
+git clone https://github.com/Mortymerio/Anima-reader.git
+cd Anima-reader
+
+# Get dependencies
 flutter pub get
 
-# Ejecutar en Windows
+# Run on Windows Desktop
 flutter run -d windows
 
-# Generar APK para Android/E-ink
+# Build Android APK (optimized for E-ink devices)
 flutter build apk --release
 ```
 
-## 📖 Estrategia de Lectura
-Anima implementa un sistema de **sub-páginas** para el texto extraído. Al tocar el lado derecho, la app bajará un bloque de texto si la página es larga; solo al llegar al final del texto saltará a la siguiente página del documento original.
+---
+
+## 📖 Project Architecture
+
+```
+lib/
+├── main.dart                      # App entry and theme controller
+├── constants/
+│   └── strings.dart               # Centralized UI copy & localized text
+├── models/
+│   ├── book.dart                  # Book representation model
+│   ├── reading_progress.dart      # Reading progress data model
+│   └── app_exception.dart         # Custom user-friendly error handler
+├── services/
+│   ├── github_service.dart        # GitHub API repository sync & files loader
+│   ├── book_parser.dart           # PDF/EPUB parsing, rendering, and auto-cropping
+│   ├── book_cache_service.dart    # Offline files caching
+│   ├── epub_sanitizer.dart        # Sanitizes EPUB content encoding errors
+│   └── sync_service.dart          # Synchronization and cloud-saving manager
+└── ui/
+    ├── theme.dart                 # High-contrast & Warm eye-care design system
+    ├── screens/
+    │   ├── home_screen.dart       # Credentials login form & library list
+    │   ├── reader_screen.dart     # Minimalist reader view (controls, font, margins)
+    │   └── settings_screen.dart   # Default preferences & refresh cycles
+    └── widgets/
+        ├── eink_flash.dart        # Double-black E-ink screen refresher
+        ├── empty_library.dart     # Empty state widget
+        ├── loading_indicator.dart # E-ink safe text loading indicator
+        └── reading_progress_bar.dart # Kindle-style bottom progress line
+```
 
 ---
-Desarrollado con ❤️ para la comunidad de lectores digitales.
+*Created with focus and simplicity for the reading community.*
