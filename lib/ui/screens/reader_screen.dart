@@ -357,7 +357,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (!mounted) return;
       if (_currentPage < _parser.totalPages) {
         _handlePageChange(1);
-        _startTtsOnCurrentPage();
       } else {
         setState(() {
           _isTtsPlaying = false;
