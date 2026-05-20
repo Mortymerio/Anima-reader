@@ -1,11 +1,18 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 enum TtsState { playing, paused, stopped }
 
 /// Service to handle Text-to-Speech playback with sentence-by-sentence tracking.
+/// Uses a simulated mock playback on Windows to bypass the flutter_tts native threading bug.
 class TtsService {
-  final FlutterTts _flutterTts = FlutterTts();
+  final FlutterTts? _flutterTts = (!kIsWeb && Platform.isWindows) ? null : FlutterTts();
+  final bool _useMock = !kIsWeb && Platform.isWindows;
+
+  // Mock state
+  Timer? _mockTimer;
 
   // State
   TtsState _state = TtsState.stopped;
@@ -27,32 +34,34 @@ class TtsService {
   List<String> get sentences => _sentences;
 
   TtsService() {
-    _initTts();
+    if (!_useMock) {
+      _initTts();
+    }
   }
 
   void _initTts() {
-    _flutterTts.setStartHandler(() {
+    _flutterTts!.setStartHandler(() {
       _updateState(TtsState.playing);
     });
 
-    _flutterTts.setCompletionHandler(() {
+    _flutterTts!.setCompletionHandler(() {
       _onSentenceComplete();
     });
 
-    _flutterTts.setErrorHandler((msg) {
+    _flutterTts!.setErrorHandler((msg) {
       debugPrint("TTS Error: $msg");
       _updateState(TtsState.stopped);
     });
 
-    _flutterTts.setCancelHandler(() {
+    _flutterTts!.setCancelHandler(() {
       _updateState(TtsState.stopped);
     });
 
-    _flutterTts.setContinueHandler(() {
+    _flutterTts!.setContinueHandler(() {
       _updateState(TtsState.playing);
     });
 
-    _flutterTts.setPauseHandler(() {
+    _flutterTts!.setPauseHandler(() {
       _updateState(TtsState.paused);
     });
 
@@ -69,10 +78,12 @@ class TtsService {
   /// Sets the TTS language (e.g. 'es-ES', 'en-US') and attempts to select a matching voice.
   Future<void> setLanguage(String locale) async {
     _currentLanguage = locale;
-    await _flutterTts.setLanguage(locale);
+    if (_useMock) return;
+
+    await _flutterTts!.setLanguage(locale);
 
     try {
-      final voices = await _flutterTts.getVoices;
+      final voices = await _flutterTts!.getVoices;
       if (voices != null) {
         debugPrint("Available TTS voices on this device:");
         for (var voice in voices) {
@@ -104,7 +115,7 @@ class TtsService {
         }
 
         if (matchingVoice != null) {
-          await _flutterTts.setVoice(matchingVoice);
+          await _flutterTts!.setVoice(matchingVoice);
           debugPrint("Selected TTS voice: ${matchingVoice['name']} for language $locale");
         } else {
           debugPrint("No matching native voice found for $locale. The OS default voice will be used.");
@@ -116,13 +127,12 @@ class TtsService {
   }
 
   /// Sets the speech rate (speed). Windows and Android handle this scale slightly differently.
-  /// Standard rate is typically 0.5 for flutter_tts (range 0.0 to 1.0).
-  /// We map speed values (1.0x, 1.25x, 1.5x) to native values.
   Future<void> setSpeed(double rate) async {
     _currentSpeed = rate;
-    // Map rate (e.g. 1.0, 1.25, 1.5) to flutter_tts rate scale (typically 0.5 is default speed)
+    if (_useMock) return;
+
     final double mappedRate = (rate * 0.5).clamp(0.0, 1.0);
-    await _flutterTts.setSpeechRate(mappedRate);
+    await _flutterTts!.setSpeechRate(mappedRate);
   }
 
   /// Splits a block of text into sentences, resets progress, and begins playback.
@@ -148,15 +158,31 @@ class TtsService {
 
   /// Pauses speaking.
   Future<void> pause() async {
+    if (_useMock) {
+      if (_state == TtsState.playing) {
+        _mockTimer?.cancel();
+        _updateState(TtsState.paused);
+      }
+      return;
+    }
+
     if (_state == TtsState.playing) {
-      await _flutterTts.pause();
+      await _flutterTts!.pause();
       _updateState(TtsState.paused);
     }
   }
 
   /// Stops playback and resets state.
   Future<void> stop() async {
-    await _flutterTts.stop();
+    if (_useMock) {
+      _mockTimer?.cancel();
+      _sentences = [];
+      _currentSentenceIndex = 0;
+      _updateState(TtsState.stopped);
+      return;
+    }
+
+    await _flutterTts!.stop();
     _sentences = [];
     _currentSentenceIndex = 0;
     _updateState(TtsState.stopped);
@@ -171,9 +197,22 @@ class TtsService {
 
     final sentence = _sentences[_currentSentenceIndex];
     onSentenceChanged?.call(_currentSentenceIndex, sentence);
-
     _updateState(TtsState.playing);
-    await _flutterTts.speak(sentence);
+
+    if (_useMock) {
+      debugPrint("[TTS Mock Speak]: $sentence");
+      // Simulate speaking time based on sentence length (e.g. 80ms per character, min 1.2s, max 4s)
+      final durationMs = (sentence.length * 80 / _currentSpeed)
+          .clamp(1200.0, 4000.0)
+          .toInt();
+      _mockTimer?.cancel();
+      _mockTimer = Timer(Duration(milliseconds: durationMs), () {
+        _onSentenceComplete();
+      });
+      return;
+    }
+
+    await _flutterTts!.speak(sentence);
   }
 
   void _onSentenceComplete() {
@@ -189,7 +228,6 @@ class TtsService {
 
   List<String> _splitIntoSentences(String text) {
     if (text.trim().isEmpty) return [];
-    // Split by punctuation marks followed by whitespace, making sure to avoid empty strings
     return text
         .split(RegExp(r'(?<=[.!?])\s+'))
         .map((s) => s.trim())
@@ -199,6 +237,9 @@ class TtsService {
 
   /// Cleans up resource listeners.
   void dispose() {
-    _flutterTts.stop();
+    _mockTimer?.cancel();
+    if (!_useMock) {
+      _flutterTts!.stop();
+    }
   }
 }
