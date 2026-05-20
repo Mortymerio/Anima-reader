@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:pdfx/pdfx.dart' as pdfx;
 import 'package:epubx/epubx.dart' as epub;
 import 'package:archive/archive.dart';
 import '../services/github_service.dart';
@@ -31,8 +34,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isLoading = true;
   String? _syncSha;
   Map<String, dynamic> _fullSyncData = {};
-  String _extractedText = "Cargando contenido...";
+  List<Widget> _pageContent = [const Text("Cargando contenido...")];
   PdfDocument? _pdfDocument;
+  pdfx.PdfDocument? _pdfxDocument;
+  bool _forceOriginalPdfPage = false;
   epub.EpubBook? _epubBook;
   List<epub.EpubChapter> _flatChapters = [];
   Timer? _debounceTimer;
@@ -141,6 +146,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
       if (fileName.endsWith(".pdf")) {
         _pdfDocument = PdfDocument(inputBytes: bytes);
+        _pdfxDocument = await pdfx.PdfDocument.openData(Uint8List.fromList(bytes));
         _extractPageText();
       } else if (fileName.endsWith(".epub")) {
         final sanitizedBytes = _sanitizeEpubBytes(bytes);
@@ -148,32 +154,71 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _flatChapters = _flattenChapters(_epubBook!.Chapters ?? []);
         _extractEpubText();
       } else if (fileName.endsWith(".mobi")) {
-        _extractedText = "El formato MOBI es antiguo. Por favor, convierte este archivo a EPUB o PDF para usar Reflow en Anima.";
+        _pageContent = [const Text("El formato MOBI es antiguo. Por favor, convierte este archivo a EPUB o PDF para usar Reflow en Anima.")];
       } else {
-        _extractedText = "Formato no soportado para Reflow aún.";
+        _pageContent = [const Text("Formato no soportado para Reflow aún.")];
       }
     } catch (e) {
       debugPrint("Sync error: $e");
-      _extractedText = "Error al cargar el libro: $e";
+      _pageContent = [Text("Error al cargar el libro: $e")];
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  void _extractPageText() {
+  void _extractPageText() async {
     if (_pdfDocument == null) return;
     try {
       // Validar rangos de página
       int pageIndex = (_currentPage - 1).clamp(0, _pdfDocument!.pages.count - 1);
-      _extractedText = PdfTextExtractor(_pdfDocument!).extractText(
+      String text = PdfTextExtractor(_pdfDocument!).extractText(
         startPageIndex: pageIndex,
         endPageIndex: pageIndex,
       );
-      if (_extractedText.trim().isEmpty) {
-        _extractedText = "Página sin texto extraíble (posible imagen).";
+      
+      bool renderAsImage = _forceOriginalPdfPage || text.trim().isEmpty;
+      
+      if (renderAsImage && _pdfxDocument != null) {
+        setState(() {
+          _pageContent = [const Padding(
+            padding: EdgeInsets.all(40.0),
+            child: Center(child: CircularProgressIndicator(color: Colors.black)),
+          )];
+        });
+        
+        final page = await _pdfxDocument!.getPage(pageIndex + 1); // pdfx usa índice base 1
+        final pageImage = await page.render(
+          width: page.width * 2.0, // 2x para resolución óptima
+          height: page.height * 2.0,
+          format: pdfx.PdfPageImageFormat.jpeg,
+        );
+        await page.close();
+        
+        if (pageImage != null) {
+          setState(() {
+            _pageContent = [
+              Image.memory(
+                pageImage.bytes,
+                fit: BoxFit.contain,
+              )
+            ];
+          });
+        } else {
+          setState(() {
+            _pageContent = [const Text("Error al renderizar la imagen de la página.")];
+          });
+        }
+      } else {
+        setState(() {
+          _pageContent = [
+            Text(text, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: _fontSize))
+          ];
+        });
       }
     } catch (e) {
-      _extractedText = "Error al extraer texto: $e";
+      setState(() {
+        _pageContent = [Text("Error al procesar página: $e")];
+      });
     }
   }
 
@@ -183,17 +228,88 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // Usamos la página como índice de capítulo
       int chapterIndex = (_currentPage - 1).clamp(0, _flatChapters.length - 1);
       final chapter = _flatChapters[chapterIndex];
-      // Limpiamos tags HTML básicos
-      _extractedText = (chapter.HtmlContent ?? '')
+      final html = chapter.HtmlContent ?? '';
+      
+      List<Widget> widgets = [];
+
+      // Si es la página 1, intentamos mostrar la portada primero
+      if (_currentPage == 1 && _epubBook!.Content?.Images != null) {
+        epub.EpubByteContentFile? coverFile;
+        // Buscamos un archivo que parezca la portada
+        _epubBook!.Content!.Images!.forEach((key, value) {
+          if (key.toLowerCase().contains('cover')) {
+            coverFile = value;
+          }
+        });
+        if (coverFile != null && coverFile!.Content != null) {
+          widgets.add(Image.memory(
+            Uint8List.fromList(coverFile!.Content!),
+            fit: BoxFit.contain,
+          ));
+          widgets.add(const SizedBox(height: 24));
+        }
+      }
+      
+      // Expresión regular para encontrar etiquetas <img>
+      final imgRegex = RegExp(r'<img[^>]+src="([^"]+)"[^>]*>', caseSensitive: false);
+      final matches = imgRegex.allMatches(html);
+      
+      int lastIndex = 0;
+      for (final match in matches) {
+        // Texto antes de la imagen
+        final textBefore = html.substring(lastIndex, match.start)
+            .replaceAll(RegExp(r'<[^>]*>'), '')
+            .replaceAll('&nbsp;', ' ')
+            .trim();
+            
+        if (textBefore.isNotEmpty) {
+          widgets.add(Text(textBefore, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: _fontSize)));
+          widgets.add(const SizedBox(height: 16));
+        }
+        
+        // Imagen
+        final src = match.group(1)!;
+        final imageName = src.split('/').last; // Nombre del archivo de imagen
+        
+        epub.EpubByteContentFile? imageFile;
+        _epubBook!.Content?.Images?.forEach((key, value) {
+          if (key.endsWith(imageName) || imageName.endsWith(key)) {
+            imageFile = value;
+          }
+        });
+        
+        if (imageFile != null && imageFile!.Content != null) {
+           widgets.add(Image.memory(
+             Uint8List.fromList(imageFile!.Content!),
+             fit: BoxFit.contain,
+           ));
+           widgets.add(const SizedBox(height: 16));
+        }
+        
+        lastIndex = match.end;
+      }
+      
+      // Texto restante después de la última imagen
+      final textAfter = html.substring(lastIndex)
           .replaceAll(RegExp(r'<[^>]*>'), '')
           .replaceAll('&nbsp;', ' ')
           .trim();
-      
-      if (_extractedText.isEmpty) {
-        _extractedText = "Capítulo sin texto o con formato complejo.";
+          
+      if (textAfter.isNotEmpty) {
+        widgets.add(Text(textAfter, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: _fontSize)));
       }
+      
+      if (widgets.isEmpty) {
+        widgets.add(Text("Capítulo sin texto o con formato complejo.", style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: _fontSize)));
+      }
+
+      setState(() {
+        _pageContent = widgets;
+      });
     } catch (e) {
-      _extractedText = "Error al leer EPUB: $e";
+      setState(() {
+        _pageContent = [Text("Error al leer EPUB: $e")];
+      });
     }
   }
 
@@ -224,6 +340,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _syncSha = syncResult['sha'];
     } finally {
       _isSaving = false;
+    }
+  }
+
+  void _changeFontSize(double amount, {bool isAbsolute = false}) {
+    setState(() {
+      _fontSize = isAbsolute ? amount : (_fontSize + amount).clamp(12.0, 32.0);
+    });
+    _savePreferences();
+    if (_pdfDocument != null) {
+      _extractPageText();
+    } else if (_epubBook != null) {
+      _extractEpubText();
     }
   }
 
@@ -287,10 +415,41 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            _handlePageChange(1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            _handlePageChange(-1);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _changeFontSize(2.0);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _changeFontSize(-2.0);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        appBar: AppBar(
         title: Text(widget.bookName, overflow: TextOverflow.ellipsis),
         actions: [
+          if (_pdfDocument != null)
+            IconButton(
+              icon: Icon(_forceOriginalPdfPage ? Icons.text_fields : Icons.image),
+              onPressed: () {
+                setState(() {
+                  _forceOriginalPdfPage = !_forceOriginalPdfPage;
+                });
+                _extractPageText();
+              },
+              tooltip: "Alternar vista original/texto",
+            ),
           // Selector de tamaño de fuente
           const Icon(Icons.format_size, size: 16),
           SizedBox(
@@ -303,8 +462,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               activeColor: Colors.black,
               inactiveColor: Colors.grey[300],
               onChanged: (value) {
-                setState(() => _fontSize = value);
-                _savePreferences();
+                _changeFontSize(value, isAbsolute: true);
               },
             ),
           ),
@@ -321,6 +479,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             : _buildReaderContent(),
           EinkFlash(visible: _isFlashing),
         ],
+      ),
       ),
     );
   }
@@ -345,11 +504,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               child: SingleChildScrollView(
                 controller: _scrollController,
                 physics: const ClampingScrollPhysics(), // Mejor para E-ink
-                child: Text(
-                  _extractedText,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontSize: _fontSize,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _pageContent,
                 ),
               ),
             ),
