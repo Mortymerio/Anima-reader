@@ -1,23 +1,33 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 enum TtsState { playing, paused, stopped }
 
-/// Service to handle Text-to-Speech playback with sentence-by-sentence tracking.
-/// Uses a simulated mock playback on Windows to bypass the flutter_tts native threading bug.
+/// Service to handle Text-to-Speech playback.
+///
+/// Strategy:
+///   • Windows (SAPI): sends the entire page text in a single speak() call.
+///     SAPI natively handles sentence pacing, punctuation pauses, etc.
+///     This avoids the race condition where SAPI briefly reports "still speaking"
+///     between two consecutive speak() calls and silently drops the second one.
+///   • Mobile (Google TTS / AVSpeech): speaks sentence-by-sentence so we can
+///     track progress and highlight the current sentence.
 class TtsService {
-  final FlutterTts? _flutterTts = FlutterTts();
-  final bool _useMock = false;
+  final FlutterTts _tts = FlutterTts();
 
-  // Mock state
-  Timer? _mockTimer;
+  /// On Windows use SAPI's single-utterance mode; elsewhere speak per sentence.
+  final bool _singleUtteranceMode = !kIsWeb && Platform.isWindows;
 
-  // State
   TtsState _state = TtsState.stopped;
+
+  // Full text for single-utterance mode (Windows)
+  String _fullText = '';
+
+  // Sentence list for per-sentence mode (mobile)
   List<String> _sentences = [];
   int _currentSentenceIndex = 0;
+
   String _currentLanguage = 'es-ES';
   double _currentSpeed = 1.0;
 
@@ -34,38 +44,41 @@ class TtsService {
   List<String> get sentences => _sentences;
 
   TtsService() {
-    if (!_useMock) {
-      _initTts();
-    }
+    _initTts();
   }
 
   void _initTts() {
-    _flutterTts!.setStartHandler(() {
+    _tts.setStartHandler(() {
       _updateState(TtsState.playing);
     });
 
-    _flutterTts!.setCompletionHandler(() {
-      _onSentenceComplete();
+    _tts.setCompletionHandler(() {
+      if (_singleUtteranceMode) {
+        // Whole page done — advance to next page
+        _updateState(TtsState.stopped);
+        onCompletion?.call();
+      } else {
+        _onSentenceComplete();
+      }
     });
 
-    _flutterTts!.setErrorHandler((msg) {
-      debugPrint("TTS Error: $msg");
+    _tts.setErrorHandler((msg) {
+      debugPrint('TTS Error: $msg');
       _updateState(TtsState.stopped);
     });
 
-    _flutterTts!.setCancelHandler(() {
+    _tts.setCancelHandler(() {
       _updateState(TtsState.stopped);
     });
 
-    _flutterTts!.setContinueHandler(() {
+    _tts.setContinueHandler(() {
       _updateState(TtsState.playing);
     });
 
-    _flutterTts!.setPauseHandler(() {
+    _tts.setPauseHandler(() {
       _updateState(TtsState.paused);
     });
 
-    // Apply defaults
     setLanguage(_currentLanguage);
     setSpeed(_currentSpeed);
   }
@@ -75,118 +88,120 @@ class TtsService {
     onStateChanged?.call(_state);
   }
 
-  /// Sets the TTS language (e.g. 'es-ES', 'en-US') and attempts to select a matching voice.
+  /// Sets the TTS language and selects the best matching installed voice.
   Future<void> setLanguage(String locale) async {
     _currentLanguage = locale;
-    if (_useMock) return;
-
-    await _flutterTts!.setLanguage(locale);
+    await _tts.setLanguage(locale);
 
     try {
-      final voices = await _flutterTts!.getVoices;
-      if (voices != null) {
-        debugPrint("Available TTS voices on this device:");
-        for (var voice in voices) {
-          if (voice is Map) {
-            debugPrint(" - Name: ${voice['name']}, Locale: ${voice['locale']}");
-          }
-        }
+      final voices = await _tts.getVoices;
+      if (voices == null) return;
 
-        final languageCode = locale.split('-')[0].toLowerCase(); // e.g. 'es'
-        Map<String, String>? matchingVoice;
-
-        for (var voice in voices) {
-          if (voice is Map) {
-            final voiceLocale = (voice['locale'] ?? '').toString().toLowerCase();
-            final voiceName = (voice['name'] ?? '').toString().toLowerCase();
-
-            // Match if locale contains language code (e.g., 'es-ES', 'es-MX', 'es') or name contains 'spanish'/'español'
-            if (voiceLocale.startsWith(languageCode) ||
-                voiceLocale.contains(languageCode) ||
-                (languageCode == 'es' && (voiceLocale.contains('spa') || voiceName.contains('spanish') || voiceName.contains('español'))) ||
-                (languageCode == 'en' && (voiceLocale.contains('eng') || voiceName.contains('english')))) {
-              matchingVoice = {
-                'name': voice['name']?.toString() ?? '',
-                'locale': voice['locale']?.toString() ?? '',
-              };
-              break;
-            }
-          }
-        }
-
-        if (matchingVoice != null) {
-          await _flutterTts!.setVoice(matchingVoice);
-          debugPrint("Selected TTS voice: ${matchingVoice['name']} for language $locale");
-        } else {
-          debugPrint("No matching native voice found for $locale. The OS default voice will be used.");
+      debugPrint('Available TTS voices on this device:');
+      for (final voice in voices) {
+        if (voice is Map) {
+          debugPrint(' - Name: ${voice['name']}, Locale: ${voice['locale']}');
         }
       }
+
+      final languageCode = locale.split('-')[0].toLowerCase();
+      Map<String, String>? matchingVoice;
+
+      for (final voice in voices) {
+        if (voice is Map) {
+          final voiceLocale = (voice['locale'] ?? '').toString().toLowerCase();
+          final voiceName = (voice['name'] ?? '').toString().toLowerCase();
+
+          if (voiceLocale.startsWith(languageCode) ||
+              voiceLocale.contains(languageCode) ||
+              (languageCode == 'es' &&
+                  (voiceLocale.contains('spa') ||
+                      voiceName.contains('spanish') ||
+                      voiceName.contains('español'))) ||
+              (languageCode == 'en' &&
+                  (voiceLocale.contains('eng') ||
+                      voiceName.contains('english')))) {
+            matchingVoice = {
+              'name': voice['name']?.toString() ?? '',
+              'locale': voice['locale']?.toString() ?? '',
+            };
+            break;
+          }
+        }
+      }
+
+      if (matchingVoice != null) {
+        await _tts.setVoice(matchingVoice);
+        debugPrint(
+            'Selected TTS voice: ${matchingVoice['name']} for language $locale');
+      } else {
+        debugPrint(
+            'No matching native voice found for $locale. The OS default voice will be used.');
+      }
     } catch (e) {
-      debugPrint("Error setting voice for locale $locale: $e");
+      debugPrint('Error setting voice for locale $locale: $e');
     }
   }
 
-  /// Sets the speech rate (speed). Windows and Android handle this scale slightly differently.
+  /// Sets the speech rate. SAPI and mobile TTS use different scales.
   Future<void> setSpeed(double rate) async {
     _currentSpeed = rate;
-    if (_useMock) return;
-
     final double mappedRate = (rate * 0.5).clamp(0.0, 1.0);
-    await _flutterTts!.setSpeechRate(mappedRate);
+    await _tts.setSpeechRate(mappedRate);
   }
 
-  /// Splits a block of text into sentences, resets progress, and begins playback.
+  /// Begins speaking the given text from the beginning.
   Future<void> start(String text) async {
     await stop();
-    _sentences = _splitIntoSentences(text);
+    _fullText = text.trim();
+    _sentences = _splitIntoSentences(_fullText);
     _currentSentenceIndex = 0;
 
-    if (_sentences.isEmpty) {
+    if (_fullText.isEmpty) {
       onCompletion?.call();
       return;
     }
 
-    _speakCurrent();
-  }
-
-  /// Resumes playback of the current sentence.
-  Future<void> resume() async {
-    if (_state == TtsState.paused && _sentences.isNotEmpty) {
+    if (_singleUtteranceMode) {
+      // Windows: hand the full page to SAPI in one call
+      _updateState(TtsState.playing);
+      await _tts.speak(_fullText);
+    } else {
+      // Mobile: sentence by sentence
       _speakCurrent();
     }
   }
 
-  /// Pauses speaking.
-  Future<void> pause() async {
-    if (_useMock) {
-      if (_state == TtsState.playing) {
-        _mockTimer?.cancel();
-        _updateState(TtsState.paused);
-      }
-      return;
-    }
+  /// Resumes paused playback.
+  Future<void> resume() async {
+    if (_state != TtsState.paused) return;
 
+    if (_singleUtteranceMode) {
+      // On SAPI, calling speak() when isPaused==true triggers Resume() internally
+      await _tts.speak(_fullText);
+    } else if (_sentences.isNotEmpty) {
+      _speakCurrent();
+    }
+  }
+
+  /// Pauses playback.
+  Future<void> pause() async {
     if (_state == TtsState.playing) {
-      await _flutterTts!.pause();
+      await _tts.pause();
       _updateState(TtsState.paused);
     }
   }
 
   /// Stops playback and resets state.
   Future<void> stop() async {
-    if (_useMock) {
-      _mockTimer?.cancel();
-      _sentences = [];
-      _currentSentenceIndex = 0;
-      _updateState(TtsState.stopped);
-      return;
-    }
-
-    await _flutterTts!.stop();
+    await _tts.stop();
     _sentences = [];
     _currentSentenceIndex = 0;
+    _fullText = '';
     _updateState(TtsState.stopped);
   }
+
+  // ─── Per-sentence mode (mobile) ───────────────────────────────────────────
 
   Future<void> _speakCurrent() async {
     if (_currentSentenceIndex >= _sentences.length) {
@@ -198,33 +213,14 @@ class TtsService {
     final sentence = _sentences[_currentSentenceIndex];
     onSentenceChanged?.call(_currentSentenceIndex, sentence);
     _updateState(TtsState.playing);
-
-    if (_useMock) {
-      debugPrint("[TTS Mock Speak]: $sentence");
-      // Simulate speaking time based on sentence length (e.g. 80ms per character, min 1.2s, max 4s)
-      final durationMs = (sentence.length * 80 / _currentSpeed)
-          .clamp(1200.0, 4000.0)
-          .toInt();
-      _mockTimer?.cancel();
-      _mockTimer = Timer(Duration(milliseconds: durationMs), () {
-        _onSentenceComplete();
-      });
-      return;
-    }
-
-    await _flutterTts!.speak(sentence);
+    await _tts.speak(sentence);
   }
 
   void _onSentenceComplete() {
     if (_state != TtsState.playing) return;
     _currentSentenceIndex++;
     if (_currentSentenceIndex < _sentences.length) {
-      // Small delay so the SAPI engine on Windows fully releases its state
-      // before we call speak() again — otherwise it briefly reports "still speaking"
-      // and ignores the next sentence, silently stopping playback.
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_state == TtsState.playing) _speakCurrent();
-      });
+      _speakCurrent();
     } else {
       stop();
       onCompletion?.call();
@@ -240,11 +236,8 @@ class TtsService {
         .toList();
   }
 
-  /// Cleans up resource listeners.
+  /// Releases resources.
   void dispose() {
-    _mockTimer?.cancel();
-    if (!_useMock) {
-      _flutterTts!.stop();
-    }
+    _tts.stop();
   }
 }
