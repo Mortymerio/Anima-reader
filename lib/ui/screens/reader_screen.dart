@@ -82,6 +82,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _syncService.dispose();
     _parser.dispose(); // Properly closes both PDF document handles (fixes A4)
     _scrollController.dispose();
+    // Clear callbacks first so async TTS stop doesn't call setState on a disposed widget
+    _ttsService.onStateChanged = null;
+    _ttsService.onSentenceChanged = null;
+    _ttsService.onCompletion = null;
     _ttsService.stop();
     _ttsService.dispose();
     super.dispose();
